@@ -1,0 +1,43 @@
+<Window x:Class="MusicDiscoveryAppPOC.SelectedTracksWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Selected Tracks"
+        Width="800"
+        Height="500"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="Your Selected Tracks"
+                   FontSize="20"
+                   FontWeight="Bold" />
+
+        <DataGrid Grid.Row="1"
+                  x:Name="TracksGrid"
+                  AutoGenerateColumns="False"
+                  CanUserAddRows="False"
+                  IsReadOnly="True"
+                  Margin="0,12,0,12">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Track" Binding="{Binding Name}" Width="*" />
+                <DataGridTextColumn Header="Artist" Binding="{Binding ArtistName}" Width="*" />
+                <DataGridTextColumn Header="Album" Binding="{Binding AlbumName}" Width="*" />
+                <DataGridTextColumn Header="Popularity" Binding="{Binding Popularity}" Width="100" />
+                <DataGridTextColumn Header="Preview URL" Binding="{Binding PreviewUrl}" Width="200" />
+                <DataGridTextColumn Header="Spotify URL" Binding="{Binding ExternalUrl}" Width="200" />
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <Button Grid.Row="2"
+                Content="Close"
+                Width="120"
+                HorizontalAlignment="Right"
+                Click="OnCloseClicked" />
+    </Grid>
+</Window>
+
+
