@@ -6,20 +6,23 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
+using System.Linq;
 using MusicDiscoveryAppPOC.Models;
+using System.Collections.ObjectModel;
 
 namespace MusicDiscoveryAppPOC;
 
 public partial class TrackReviewWindow : Window
 {
-    private readonly IList<TrackInfo> _tracks;
+    private readonly ObservableCollection<TrackInfo> _tracks;
+
     private readonly List<TrackInfo> _selectedTracks = new();
     private int _currentIndex;
     private bool _isPlaying;
 
     public IReadOnlyList<TrackInfo> SelectedTracks => _selectedTracks;
 
-    public TrackReviewWindow(IList<TrackInfo> tracks)
+    public TrackReviewWindow(ObservableCollection<TrackInfo> tracks)
     {
         InitializeComponent();
 
@@ -31,7 +34,16 @@ public partial class TrackReviewWindow : Window
         _tracks = tracks;
         _currentIndex = 0;
         UpdateView();
+
+        // react when new tracks arrive
+        _tracks.CollectionChanged += (_, __) =>
+        {
+            // If user reached the end and new tracks come in, continue normally.
+            if (_currentIndex < _tracks.Count)
+                UpdateView();
+        };
     }
+
 
     private void UpdateView()
     {
@@ -135,6 +147,29 @@ public partial class TrackReviewWindow : Window
     {
         StopPreview();
         base.OnClosed(e);
+    }
+
+    private void OnCreatePlaylistClicked(object sender, RoutedEventArgs e)
+    {
+        var playlistCandidates = new List<TrackInfo>(_selectedTracks);
+        if (_currentIndex < _tracks.Count)
+        {
+            var currentTrack = _tracks[_currentIndex];
+            if (playlistCandidates.All(t => !string.Equals(t.Id, currentTrack.Id, StringComparison.OrdinalIgnoreCase)))
+            {
+                playlistCandidates.Add(currentTrack);
+            }
+        }
+
+        if (playlistCandidates.Count == 0)
+        {
+            MessageBox.Show("There are no tracks available to add to a playlist yet. Keep at least one track first.", "No Tracks Selected", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var playlistWindow = new CreatePlaylistWindow(playlistCandidates);
+        playlistWindow.Owner = this;
+        playlistWindow.Show();
     }
 
     private void OnHyperlinkNavigate(object sender, RequestNavigateEventArgs e)

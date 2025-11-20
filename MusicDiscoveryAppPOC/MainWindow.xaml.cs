@@ -159,6 +159,25 @@ namespace MusicDiscoveryAppPOC
             }
         }
 
+        private HashSet<string> GetSelectedGenres()
+        {
+            var genres = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var artist in _selectedArtists)
+            {
+                if (artist.Metadata.TryGetValue("genres", out var g) && g is not null)
+                {
+                    foreach (var genre in g.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        genres.Add(genre.Trim());
+                    }
+                }
+            }
+
+            return genres;
+        }
+
+
         private async void OnFindSuggestionsClicked(object sender, RoutedEventArgs e)
         {
             if (!_isConfigured || _spotifyService is null || _deezerService is null)
@@ -201,6 +220,9 @@ namespace MusicDiscoveryAppPOC
 
                 var suggestionTracks = new List<TrackInfo>();
 
+                var selectedGenres = GetSelectedGenres();
+
+
                 foreach (var similarArtist in similarArtists)
                 {
                     var spotifyArtist = await _spotifyService.GetArtistByNameAsync(similarArtist.Name).ConfigureAwait(true);
@@ -208,6 +230,26 @@ namespace MusicDiscoveryAppPOC
                     {
                         continue;
                     }
+
+                    // ✔ Genre filtering
+                    if (spotifyArtist.Metadata.TryGetValue("genres", out var genreText) && genreText is not null)
+                    {
+                        var candidateGenres = genreText
+                            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                            .Select(g => g.Trim());
+
+                        if (!candidateGenres.Any(g => selectedGenres.Contains(g)))
+                        {
+                            // Skip artists that don't share genre with user's selection
+                            continue;
+                        }
+                    }
+                    else
+                    {
+                        // Skip artists with no genre info
+                        continue;
+                    }
+
 
                     var topTracks = await _spotifyService.GetTopTracksAsync(spotifyArtist.SpotifyId).ConfigureAwait(true);
                     
@@ -241,13 +283,35 @@ namespace MusicDiscoveryAppPOC
                     return;
                 }
 
-                StatusTextBlock.Text = $"Loaded {suggestionTracks.Count} tracks for review.";
+                // MIX tracks before partial loading
+                var rng = new Random();
+                suggestionTracks = suggestionTracks.OrderBy(_ => rng.Next()).ToList();
 
-                var reviewWindow = new TrackReviewWindow(suggestionTracks);
+                StatusTextBlock.Text = $"Loaded {suggestionTracks.Count} tracks… opening review window";
+
+                // Create observable list for partial loading
+                var reviewTracks = new ObservableCollection<TrackInfo>();
+
+                // Load first batch instantly
+                foreach (var t in suggestionTracks.Take(10))
+                    reviewTracks.Add(t);
+
+                // Open the window immediately (fast!)
+                var reviewWindow = new TrackReviewWindow(reviewTracks);
                 reviewWindow.Owner = this;
+                reviewWindow.Show();
 
-                var reviewResult = reviewWindow.ShowDialog();
-                if (reviewResult == true && reviewWindow.SelectedTracks.Any())
+                // Load rest in the background
+                _ = Task.Run(async () =>
+                {
+                    foreach (var t in suggestionTracks.Skip(10))
+                    {
+                        await Task.Delay(50);
+                        Dispatcher.Invoke(() => reviewTracks.Add(t));
+                    }
+                });
+
+                if (reviewWindow.SelectedTracks.Any())
                 {
                     var selectedTracksWindow = new SelectedTracksWindow(reviewWindow.SelectedTracks);
                     selectedTracksWindow.Owner = this;
@@ -268,6 +332,25 @@ namespace MusicDiscoveryAppPOC
                 SetBusyState(false);
             }
         }
+
+        //private HashSet<string> GetSelectedGenres()
+        //{
+        //    var genres = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        //    foreach (var artist in _selectedArtists)
+        //    {
+        //        if (artist.Metadata.TryGetValue("genres", out var g) && g is not null)
+        //        {
+        //            foreach (var genre in g.Split(',', StringSplitOptions.RemoveEmptyEntries))
+        //            {
+        //                genres.Add(genre.Trim());
+        //            }
+        //        }
+        //    }
+
+        //    return genres;
+        //}
+
 
         private void SetBusyState(bool isBusy, string? message = null)
         {

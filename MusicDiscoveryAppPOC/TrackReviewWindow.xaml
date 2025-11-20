@@ -86,14 +86,17 @@
 
         <StackPanel Grid.Row="2"
                     Orientation="Horizontal"
-                    HorizontalAlignment="Center">
+                    HorizontalAlignment="Center"
+                    >
             <Button Content="Skip (←)"
                     Width="150"
-                    Margin="0,0,12,0"
                     Click="OnSkipClicked" />
             <Button Content="Keep (→)"
                     Width="150"
                     Click="OnKeepClicked" />
+            <Button Content="Create Playlist"
+                    Width="150"
+                    Click="OnCreatePlaylistClicked" />
         </StackPanel>
     </Grid>
 </Window>

@@ -36,7 +36,7 @@ public class SpotifyService : IDisposable
     {
         await EnsureAccessTokenAsync(cancellationToken).ConfigureAwait(false);
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"{ApiBaseUrl}/search?type=artist&q={Uri.EscapeDataString(query)}&limit=20");
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"{ApiBaseUrl}/search?type=artist&q={Uri.EscapeDataString(query)}&limit=5");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
 
         using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
