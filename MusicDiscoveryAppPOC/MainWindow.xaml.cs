@@ -223,15 +223,35 @@ namespace MusicDiscoveryAppPOC
                 var selectedGenres = GetSelectedGenres();
 
 
+                // Final list we will fill gradually
+                var allTracks = new ObservableCollection<TrackInfo>();
+
+                TrackReviewWindow? reviewWindow = null;
+                bool reviewWindowOpened = false;
+
+                int artistIndex = 0;
+
                 foreach (var similarArtist in similarArtists)
                 {
-                    var spotifyArtist = await _spotifyService.GetArtistByNameAsync(similarArtist.Name).ConfigureAwait(true);
-                    if (spotifyArtist?.SpotifyId is null)
+                        
+                    // ❗ Skip if this artist is one of the originally selected artists
+                    if (_selectedArtists.Any(a =>
+                            string.Equals(a.Name, similarArtist.Name, StringComparison.OrdinalIgnoreCase) ||
+                            (!string.IsNullOrWhiteSpace(a.SpotifyId) &&
+                             !string.IsNullOrWhiteSpace(similarArtist.SpotifyId) &&
+                             string.Equals(a.SpotifyId, similarArtist.SpotifyId, StringComparison.OrdinalIgnoreCase))))
                     {
                         continue;
                     }
 
-                    // ✔ Genre filtering
+                    artistIndex++;
+
+                    // Look up Spotify version of this artist
+                    var spotifyArtist = await _spotifyService.GetArtistByNameAsync(similarArtist.Name).ConfigureAwait(true);
+                    if (spotifyArtist?.SpotifyId is null)
+                        continue;
+
+                    // GENRE FILTERING
                     if (spotifyArtist.Metadata.TryGetValue("genres", out var genreText) && genreText is not null)
                     {
                         var candidateGenres = genreText
@@ -239,21 +259,17 @@ namespace MusicDiscoveryAppPOC
                             .Select(g => g.Trim());
 
                         if (!candidateGenres.Any(g => selectedGenres.Contains(g)))
-                        {
-                            // Skip artists that don't share genre with user's selection
                             continue;
-                        }
                     }
                     else
                     {
-                        // Skip artists with no genre info
                         continue;
                     }
 
-
+                    // Fetch top tracks
                     var topTracks = await _spotifyService.GetTopTracksAsync(spotifyArtist.SpotifyId).ConfigureAwait(true);
-                    
-                    // Fetch preview URLs from Deezer for tracks that don't have Spotify preview
+
+                    // Fetch missing previews via Deezer
                     foreach (var track in topTracks)
                     {
                         if (string.IsNullOrWhiteSpace(track.PreviewUrl))
@@ -262,65 +278,67 @@ namespace MusicDiscoveryAppPOC
                             {
                                 var deezerPreview = await _deezerService.GetTrackPreviewUrlAsync(track.Name, track.ArtistName).ConfigureAwait(true);
                                 if (!string.IsNullOrWhiteSpace(deezerPreview))
-                                {
                                     track.PreviewUrl = deezerPreview;
-                                }
                             }
-                            catch
-                            {
-                                // Continue if Deezer preview fetch fails
-                            }
+                            catch { }
                         }
                     }
-                    
-                    suggestionTracks.AddRange(topTracks);
+
+                    // SHUFFLE this artist's tracks to reduce clustering
+                    var rng = new Random();
+                    topTracks = topTracks.OrderBy(_ => rng.Next()).ToList();
+
+                    // ADD THEM TO THE MASTER STREAM
+                    var rng1 = new Random();
+
+                    foreach (var t in topTracks)
+                    {
+                        int insertIndex = rng1.Next(0, allTracks.Count + 1);
+                        allTracks.Insert(insertIndex, t);
+                    }
+
+
+                    // ❗ OPEN THE TRACK REVIEW WINDOW IMMEDIATELY AFTER FIRST ARTIST
+                    if (!reviewWindowOpened && allTracks.Count > 0)
+                    {
+                        reviewWindowOpened = true;
+
+                        // Open TrackReviewWindow with streaming collection
+                        reviewWindow = new TrackReviewWindow(allTracks);
+                        reviewWindow.Owner = this;
+                        reviewWindow.Show();
+
+                        StatusTextBlock.Text = "Starting track review… loading more in background.";
+                    }
+
+                    // Continue processing remaining artists WITHOUT blocking UI
+                    await Task.Delay(50);
                 }
 
-                if (suggestionTracks.Count == 0)
+                // After loop ends
+                if (!reviewWindowOpened)
                 {
-                    StatusTextBlock.Text = "No Spotify tracks found for similar artists.";
-                    MessageBox.Show("No top tracks were found on Spotify for the similar artists.", "No Tracks Found", MessageBoxButton.OK, MessageBoxImage.Information);
+                    StatusTextBlock.Text = "No matching tracks found.";
+                    MessageBox.Show("No top tracks were found on Spotify for the similar artists.", "No Tracks Found",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
 
-                // MIX tracks before partial loading
-                var rng = new Random();
-                suggestionTracks = suggestionTracks.OrderBy(_ => rng.Next()).ToList();
-
-                StatusTextBlock.Text = $"Loaded {suggestionTracks.Count} tracks… opening review window";
-
-                // Create observable list for partial loading
-                var reviewTracks = new ObservableCollection<TrackInfo>();
-
-                // Load first batch instantly
-                foreach (var t in suggestionTracks.Take(10))
-                    reviewTracks.Add(t);
-
-                // Open the window immediately (fast!)
-                var reviewWindow = new TrackReviewWindow(reviewTracks);
-                reviewWindow.Owner = this;
-                reviewWindow.Show();
-
-                // Load rest in the background
-                _ = Task.Run(async () =>
+                // When user finishes and closes ReviewWindow:
+                reviewWindow!.Closed += (_, __) =>
                 {
-                    foreach (var t in suggestionTracks.Skip(10))
+                    if (reviewWindow.SelectedTracks.Any())
                     {
-                        await Task.Delay(50);
-                        Dispatcher.Invoke(() => reviewTracks.Add(t));
+                        var window = new SelectedTracksWindow(reviewWindow.SelectedTracks);
+                        window.Owner = this;
+                        window.ShowDialog();
                     }
-                });
+                    else
+                    {
+                        StatusTextBlock.Text = "No tracks selected.";
+                    }
+                };
 
-                if (reviewWindow.SelectedTracks.Any())
-                {
-                    var selectedTracksWindow = new SelectedTracksWindow(reviewWindow.SelectedTracks);
-                    selectedTracksWindow.Owner = this;
-                    selectedTracksWindow.ShowDialog();
-                }
-                else
-                {
-                    StatusTextBlock.Text = "No tracks selected.";
-                }
             }
             catch (Exception ex)
             {

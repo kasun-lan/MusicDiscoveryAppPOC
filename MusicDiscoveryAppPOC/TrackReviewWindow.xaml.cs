@@ -16,9 +16,17 @@ public partial class TrackReviewWindow : Window
 {
     private readonly ObservableCollection<TrackInfo> _tracks;
 
-    private readonly List<TrackInfo> _selectedTracks = new();
-    private int _currentIndex;
+    // This stays! But now it represents our position inside the shuffle-order list.
+    private int _currentIndex = 0;
+
+    private readonly List<int> _shuffleOrder = new();  // list of track indices in the order they should appear
     private bool _isPlaying;
+
+
+
+    private readonly List<TrackInfo> _selectedTracks = new();
+    private int _currentPosition = 0; // position inside shuffle queue
+
 
     public IReadOnlyList<TrackInfo> SelectedTracks => _selectedTracks;
 
@@ -26,22 +34,40 @@ public partial class TrackReviewWindow : Window
     {
         InitializeComponent();
 
-        if (tracks == null || tracks.Count == 0)
-        {
-            throw new ArgumentException("Tracks cannot be empty.", nameof(tracks));
-        }
-
         _tracks = tracks;
-        _currentIndex = 0;
-        UpdateView();
 
-        // react when new tracks arrive
-        _tracks.CollectionChanged += (_, __) =>
+        // Initial shuffle order for existing tracks
+        for (int i = 0; i < _tracks.Count; i++)
+            _shuffleOrder.Add(i);
+
+        ShuffleList(_shuffleOrder);
+
+        // React to new incoming tracks
+        _tracks.CollectionChanged += (s, e) =>
         {
-            // If user reached the end and new tracks come in, continue normally.
-            if (_currentIndex < _tracks.Count)
-                UpdateView();
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Add)
+            {
+                int newIndex = _tracks.Count - 1;
+
+                // Insert new item into shuffle order at a random position
+                var rng = new Random();
+                int pos = rng.Next(_shuffleOrder.Count + 1);
+                _shuffleOrder.Insert(pos, newIndex);
+            }
         };
+
+        UpdateView();
+    }
+
+
+    private void ShuffleList(List<int> list)
+    {
+        var rng = new Random();
+        for (int i = list.Count - 1; i > 0; i--)
+        {
+            int j = rng.Next(i + 1);
+            (list[i], list[j]) = (list[j], list[i]);
+        }
     }
 
 
@@ -53,7 +79,12 @@ public partial class TrackReviewWindow : Window
             return;
         }
 
-        var track = _tracks[_currentIndex];
+        if (_shuffleOrder.Count == 0)
+            return;
+
+        int trackIndex = _shuffleOrder[_currentPosition];
+        var track = _tracks[trackIndex];
+
         ProgressTextBlock.Text = $"{_currentIndex + 1} / {_tracks.Count}";
         TrackTitleTextBlock.Text = track.Name;
         ArtistTextBlock.Text = track.ArtistName;
@@ -120,7 +151,15 @@ public partial class TrackReviewWindow : Window
     private void OnKeepClicked(object sender, RoutedEventArgs e)
     {
         StopPreview();
-        _selectedTracks.Add(_tracks[_currentIndex]);
+
+        var current = GetCurrentTrackOrNull();
+        if (current != null)
+        {
+            // Avoid duplicates in selected list by track Id
+            if (!_selectedTracks.Any(t => string.Equals(t.Id, current.Id, StringComparison.OrdinalIgnoreCase)))
+                _selectedTracks.Add(current);
+        }
+
         Advance();
     }
 
@@ -132,8 +171,15 @@ public partial class TrackReviewWindow : Window
 
     private void Advance()
     {
-        _currentIndex++;
+        _currentPosition++;
+        if (_currentPosition >= _shuffleOrder.Count)
+        {
+            CompleteSelection();
+            return;
+        }
+
         UpdateView();
+
     }
 
     private void CompleteSelection()
@@ -151,11 +197,14 @@ public partial class TrackReviewWindow : Window
 
     private void OnCreatePlaylistClicked(object sender, RoutedEventArgs e)
     {
+        // Start with a copy of selected tracks (these are already actual TrackInfo objects)
         var playlistCandidates = new List<TrackInfo>(_selectedTracks);
-        if (_currentIndex < _tracks.Count)
+
+        // Also consider the currently shown track (if not already selected)
+        var currentTrack = GetCurrentTrackOrNull();
+        if (currentTrack != null)
         {
-            var currentTrack = _tracks[_currentIndex];
-            if (playlistCandidates.All(t => !string.Equals(t.Id, currentTrack.Id, StringComparison.OrdinalIgnoreCase)))
+            if (!playlistCandidates.Any(t => string.Equals(t.Id, currentTrack.Id, StringComparison.OrdinalIgnoreCase)))
             {
                 playlistCandidates.Add(currentTrack);
             }
@@ -172,6 +221,19 @@ public partial class TrackReviewWindow : Window
         playlistWindow.Show();
     }
 
+
+    private TrackInfo? GetCurrentTrackOrNull()
+    {
+        if (_shuffleOrder.Count == 0) return null;
+        if (_currentIndex < 0 || _currentIndex >= _shuffleOrder.Count) return null;
+
+        int trackIndex = _shuffleOrder[_currentIndex];
+        if (trackIndex < 0 || trackIndex >= _tracks.Count) return null;
+
+        return _tracks[trackIndex];
+    }
+
+
     private void OnHyperlinkNavigate(object sender, RequestNavigateEventArgs e)
     {
         if (e.Uri != null)
@@ -187,7 +249,14 @@ public partial class TrackReviewWindow : Window
 
     private void OnPlayPauseClicked(object sender, RoutedEventArgs e)
     {
-        var track = _tracks[_currentIndex];
+        if (_shuffleOrder.Count == 0)
+            return;
+
+        int trackIndex = _shuffleOrder[_currentPosition];
+        var track = GetCurrentTrackOrNull();
+        if (track == null) return;
+
+
         if (string.IsNullOrWhiteSpace(track.PreviewUrl))
         {
             return;
