@@ -17,8 +17,6 @@ public partial class TrackReviewWindow : Window
     private readonly ObservableCollection<TrackInfo> _tracks;
 
     // This stays! But now it represents our position inside the shuffle-order list.
-    private int _currentIndex = 0;
-
     private readonly List<int> _shuffleOrder = new();  // list of track indices in the order they should appear
     private bool _isPlaying;
 
@@ -45,14 +43,38 @@ public partial class TrackReviewWindow : Window
         // React to new incoming tracks
         _tracks.CollectionChanged += (s, e) =>
         {
-            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Add)
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Add && e.NewItems is not null)
             {
-                int newIndex = _tracks.Count - 1;
-
-                // Insert new item into shuffle order at a random position
                 var rng = new Random();
-                int pos = rng.Next(_shuffleOrder.Count + 1);
-                _shuffleOrder.Insert(pos, newIndex);
+
+                for (int i = 0; i < e.NewItems.Count; i++)
+                {
+                    int newIndex = e.NewStartingIndex >= 0
+                        ? e.NewStartingIndex + i
+                        : _tracks.Count - e.NewItems.Count + i;
+
+                    // Shift any stored indices that are >= the new insertion point
+                    for (int j = 0; j < _shuffleOrder.Count; j++)
+                    {
+                        if (_shuffleOrder[j] >= newIndex)
+                        {
+                            _shuffleOrder[j]++;
+                        }
+                    }
+
+                    // Insert new item into shuffle order at a random position
+                    int pos = rng.Next(_shuffleOrder.Count + 1);
+                    _shuffleOrder.Insert(pos, newIndex);
+
+                    // If the insert happens before or at the current track position, shift the cursor
+                    if (pos <= _currentPosition)
+                    {
+                        _currentPosition++;
+                    }
+                }
+
+                // Refresh UI so bindings stay consistent with the shuffled indices
+                UpdateView();
             }
         };
 
@@ -73,7 +95,7 @@ public partial class TrackReviewWindow : Window
 
     private void UpdateView()
     {
-        if (_currentIndex >= _tracks.Count)
+        if (_currentPosition >= _shuffleOrder.Count)
         {
             CompleteSelection();
             return;
@@ -85,7 +107,7 @@ public partial class TrackReviewWindow : Window
         int trackIndex = _shuffleOrder[_currentPosition];
         var track = _tracks[trackIndex];
 
-        ProgressTextBlock.Text = $"{_currentIndex + 1} / {_tracks.Count}";
+        ProgressTextBlock.Text = $"{_currentPosition + 1} / {_tracks.Count}";
         TrackTitleTextBlock.Text = track.Name;
         ArtistTextBlock.Text = track.ArtistName;
         AlbumTextBlock.Text = $"Album: {track.AlbumName}";
@@ -225,9 +247,9 @@ public partial class TrackReviewWindow : Window
     private TrackInfo? GetCurrentTrackOrNull()
     {
         if (_shuffleOrder.Count == 0) return null;
-        if (_currentIndex < 0 || _currentIndex >= _shuffleOrder.Count) return null;
+        if (_currentPosition < 0 || _currentPosition >= _shuffleOrder.Count) return null;
 
-        int trackIndex = _shuffleOrder[_currentIndex];
+        int trackIndex = _shuffleOrder[_currentPosition];
         if (trackIndex < 0 || trackIndex >= _tracks.Count) return null;
 
         return _tracks[trackIndex];
