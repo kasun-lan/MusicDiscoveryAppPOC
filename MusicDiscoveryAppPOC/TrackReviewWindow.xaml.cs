@@ -219,18 +219,8 @@ public partial class TrackReviewWindow : Window
 
     private void OnCreatePlaylistClicked(object sender, RoutedEventArgs e)
     {
-        // Start with a copy of selected tracks (these are already actual TrackInfo objects)
+        // Only rely on tracks the user explicitly kept
         var playlistCandidates = new List<TrackInfo>(_selectedTracks);
-
-        // Also consider the currently shown track (if not already selected)
-        var currentTrack = GetCurrentTrackOrNull();
-        if (currentTrack != null)
-        {
-            if (!playlistCandidates.Any(t => string.Equals(t.Id, currentTrack.Id, StringComparison.OrdinalIgnoreCase)))
-            {
-                playlistCandidates.Add(currentTrack);
-            }
-        }
 
         if (playlistCandidates.Count == 0)
         {
