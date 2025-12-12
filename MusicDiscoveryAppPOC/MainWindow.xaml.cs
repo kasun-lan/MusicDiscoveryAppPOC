@@ -17,6 +17,8 @@ namespace MusicDiscoveryAppPOC
 
         private SpotifyService? _spotifyService;
         private DeezerService? _deezerService;
+        private MusicBrainzService? _musicBrainzService;
+
         private bool _isConfigured;
 
         public MainWindow()
@@ -24,6 +26,8 @@ namespace MusicDiscoveryAppPOC
             InitializeComponent();
             SearchResultsList.ItemsSource = _searchResults;
             SelectedArtistsList.ItemsSource = _selectedArtists;
+
+
 
             InitializeServices();
         }
@@ -47,6 +51,8 @@ namespace MusicDiscoveryAppPOC
             {
                 _spotifyService = new SpotifyService(clientId, clientSecret);
                 _deezerService = new DeezerService();
+                _musicBrainzService = new MusicBrainzService();
+
                 _isConfigured = true;
                 StatusTextBlock.Text = "Ready.";
             }
@@ -111,10 +117,21 @@ namespace MusicDiscoveryAppPOC
             StatusTextBlock.Text = "Cleared search results.";
         }
 
-        private void OnAddArtistClicked(object sender, RoutedEventArgs e)
+        private async void OnAddArtistClicked(object sender, RoutedEventArgs e)
         {
             var selected = SearchResultsList.SelectedItems.Cast<ArtistInfo>().ToList();
-            AddArtistsToSelection(selected);
+            var FullSpotifyArtists = await GetFullSpotifyArtists(selected);
+            var ArtistsWithGenres = await AddMusicBrainzGenretoArtists(FullSpotifyArtists);
+
+            foreach (var artist in ArtistsWithGenres)
+            {
+                if (_selectedArtists.Any(a => a.SpotifyId == artist.SpotifyId))
+                    continue;
+                _selectedArtists.Add(artist);
+                Console.WriteLine($"SELECTED ARTIST : {artist.ToString()}");
+
+            }
+
         }
 
         private void OnRemoveArtistClicked(object sender, RoutedEventArgs e)
@@ -139,25 +156,86 @@ namespace MusicDiscoveryAppPOC
             }
         }
 
-        private void AddArtistsToSelection(IEnumerable<ArtistInfo> artists)
+        private async Task<IEnumerable<ArtistInfo>> AddMusicBrainzGenretoArtists(IEnumerable<ArtistInfo> artists)
         {
-            var added = 0;
+
+
             foreach (var artist in artists)
             {
-                if (_selectedArtists.Any(a => string.Equals(a.SpotifyId, artist.SpotifyId, StringComparison.OrdinalIgnoreCase)))
+                bool hasSpotifyGenres =
+                   artist.Metadata.TryGetValue("genres", out var g)
+                   && !string.IsNullOrWhiteSpace(g);
+
+                if (!hasSpotifyGenres && _musicBrainzService != null)
                 {
+                    var mbGenres = await _musicBrainzService.GetGenresAsync(artist.Name);
+
+                    if (mbGenres.Count > 0)
+                        artist.Metadata["genres"] = string.Join(", ", mbGenres);
+                }
+            }
+
+            return artists;
+        }
+
+        private async Task<IEnumerable<ArtistInfo>> GetFullSpotifyArtists(IEnumerable<ArtistInfo> artists)
+        {
+            List<ArtistInfo> FullArtists = new List<ArtistInfo>();
+
+            foreach (var artist in artists)
+            {
+                ArtistInfo fullArtist = null;
+
+                if (_spotifyService != null && !string.IsNullOrWhiteSpace(artist.SpotifyId))
+                {
+                    var spotifyFull = await _spotifyService.GetArtistByIdAsync(artist.SpotifyId);
+                    if (spotifyFull != null)
+                    {
+                        fullArtist = spotifyFull;
+                        FullArtists.Add(fullArtist);
+                    }
+                }
+            }
+
+            return FullArtists;
+        }
+
+        private async void AddArtistsToSelection(IEnumerable<ArtistInfo> artists)
+        {
+            foreach (var artist in artists)
+            {
+                if (_selectedArtists.Any(a => a.SpotifyId == artist.SpotifyId))
                     continue;
+
+                ArtistInfo fullArtist = artist;
+
+                // Step 1: Get full Spotify details
+                if (_spotifyService != null && !string.IsNullOrWhiteSpace(artist.SpotifyId))
+                {
+                    var spotifyFull = await _spotifyService.GetArtistByIdAsync(artist.SpotifyId);
+                    if (spotifyFull != null)
+                        fullArtist = spotifyFull;
                 }
 
-                _selectedArtists.Add(artist);
-                added++;
+                // Step 2: If genres missing → fallback to MusicBrainz
+                bool hasSpotifyGenres =
+                    fullArtist.Metadata.TryGetValue("genres", out var g)
+                    && !string.IsNullOrWhiteSpace(g);
+
+                if (!hasSpotifyGenres && _musicBrainzService != null)
+                {
+                    var mbGenres = await _musicBrainzService.GetGenresAsync(fullArtist.Name);
+
+                    if (mbGenres.Count > 0)
+                        fullArtist.Metadata["genres"] = string.Join(", ", mbGenres);
+                }
+
+                _selectedArtists.Add(fullArtist);
             }
 
-            if (added > 0)
-            {
-                StatusTextBlock.Text = $"Added {added} artist(s) to selection.";
-            }
+            StatusTextBlock.Text = "Added artist(s) to selection.";
         }
+
 
         private HashSet<string> GetSelectedGenres()
         {
@@ -180,6 +258,7 @@ namespace MusicDiscoveryAppPOC
 
         private async void OnFindSuggestionsClicked(object sender, RoutedEventArgs e)
         {
+
             if (!_isConfigured || _spotifyService is null || _deezerService is null)
             {
                 MessageBox.Show("Services are not configured. Check your Spotify credentials.", "Configuration Required", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -209,6 +288,14 @@ namespace MusicDiscoveryAppPOC
                     }
                 }
 
+                #region debug
+                Console.WriteLine("Deezer similarArtists");
+                foreach (var artist in similarArtists)
+                {
+                    Console.WriteLine($"{artist.ToString()}");
+                }
+                #endregion
+
                 if (similarArtists.Count == 0)
                 {
                     StatusTextBlock.Text = "Deezer did not return similar artists.";
@@ -222,6 +309,12 @@ namespace MusicDiscoveryAppPOC
 
                 var selectedGenres = GetSelectedGenres();
 
+                #region debug
+                string strSelectedGenres = string.Join(",", selectedGenres);
+                Console.WriteLine();
+                Console.WriteLine("Selected Genres: ");
+                Console.WriteLine(strSelectedGenres);
+                #endregion
 
                 // Final list we will fill gradually
                 var allTracks = new ObservableCollection<TrackInfo>();
@@ -231,89 +324,130 @@ namespace MusicDiscoveryAppPOC
 
                 int artistIndex = 0;
 
+                int totalTrackCount = 0;
+
                 foreach (var similarArtist in similarArtists)
                 {
-                        
-                    // ❗ Skip if this artist is one of the originally selected artists
-                    if (_selectedArtists.Any(a =>
-                            string.Equals(a.Name, similarArtist.Name, StringComparison.OrdinalIgnoreCase) ||
-                            (!string.IsNullOrWhiteSpace(a.SpotifyId) &&
-                             !string.IsNullOrWhiteSpace(similarArtist.SpotifyId) &&
-                             string.Equals(a.SpotifyId, similarArtist.SpotifyId, StringComparison.OrdinalIgnoreCase))))
+
+                    try
                     {
-                        continue;
-                    }
 
-                    artistIndex++;
-
-                    // Look up Spotify version of this artist
-                    var spotifyArtist = await _spotifyService.GetArtistByNameAsync(similarArtist.Name).ConfigureAwait(true);
-                    if (spotifyArtist?.SpotifyId is null)
-                        continue;
-
-                    // GENRE FILTERING
-                    if (spotifyArtist.Metadata.TryGetValue("genres", out var genreText) && genreText is not null)
-                    {
-                        var candidateGenres = genreText
-                            .Split(',', StringSplitOptions.RemoveEmptyEntries)
-                            .Select(g => g.Trim());
-
-                        if (!candidateGenres.Any(g => selectedGenres.Contains(g)))
-                            continue;
-                    }
-                    else
-                    {
-                        continue;
-                    }
-
-                    // Fetch top tracks
-                    var topTracks = await _spotifyService.GetTopTracksAsync(spotifyArtist.SpotifyId).ConfigureAwait(true);
-
-                    // Fetch missing previews via Deezer
-                    foreach (var track in topTracks)
-                    {
-                        if (string.IsNullOrWhiteSpace(track.PreviewUrl))
+                        // ❗ Skip if this artist is one of the originally selected artists
+                        if (_selectedArtists.Any(a =>
+                                string.Equals(a.Name, similarArtist.Name, StringComparison.OrdinalIgnoreCase)))
                         {
-                            try
-                            {
-                                var deezerPreview = await _deezerService.GetTrackPreviewUrlAsync(track.Name, track.ArtistName).ConfigureAwait(true);
-                                if (!string.IsNullOrWhiteSpace(deezerPreview))
-                                    track.PreviewUrl = deezerPreview;
-                            }
-                            catch { }
+                            continue;
                         }
+
+                        artistIndex++;
+
+                        // Look up Spotify version of this artist
+                        //var spotifyArtist = await _spotifyService.GetArtistByNameAsync(similarArtist.Name).ConfigureAwait(true);
+                        //if (spotifyArtist?.SpotifyId is null)
+                        //    continue;
+
+                        //bool hasSpotifyGenres =
+                        //similarArtist.Metadata.TryGetValue("genres", out var g)
+                        //&& !string.IsNullOrWhiteSpace(g);
+
+                        //if (!hasSpotifyGenres && _musicBrainzService != null)
+                        //{
+                        await Task.Delay(1000);
+                        var mbGenres = await _musicBrainzService.GetGenresAsync(similarArtist.Name);
+
+                        if (mbGenres.Count > 0)
+                            similarArtist.Metadata["genres"] = string.Join(", ", mbGenres);
+                        //}
+
+
+                        // GENRE FILTERING
+                        if (similarArtist.Metadata.TryGetValue("genres", out var genreText) && genreText is not null)
+                        {
+                            var candidateGenres = genreText
+                                .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                                .Select(g => g.Trim());
+
+                            if (!candidateGenres.Any(g => selectedGenres.Contains(g)))
+                                continue;
+                        }
+                        else
+                        {
+                            continue;
+                        }
+
+
+
+                        // Fetch top tracks
+                        var tracks = await _deezerService.GetDeezerArtistTracksAsync(similarArtist.DeezerId).ConfigureAwait(true);
+                        similarArtist.TopTrackCount = tracks.Count;
+                        totalTrackCount += tracks.Count;
+
+                        // Fetch missing previews via Deezer
+                        foreach (var track in tracks)
+                        {
+                            if (string.IsNullOrWhiteSpace(track.PreviewUrl))
+                            {
+                                try
+                                {
+                                    var deezerPreview = await _deezerService.GetTrackPreviewUrlAsync(track.Name, track.ArtistName).ConfigureAwait(true);
+                                    if (!string.IsNullOrWhiteSpace(deezerPreview))
+                                    {
+                                        track.PreviewUrl = deezerPreview;
+                                    }
+                                }
+                                catch { }
+                            }
+                        }
+
+                        // SHUFFLE this artist's tracks to reduce clustering
+                        var rng = new Random();
+                        tracks = tracks.OrderBy(_ => rng.Next()).ToList();
+
+                        // ADD THEM TO THE MASTER STREAM
+                        var rng1 = new Random();
+
+                        foreach (var t in tracks)
+                        {
+                            int safeStart = (reviewWindow is null) ? 0 : reviewWindow.CurrentReviewIndex + 1;
+                            int insertIndex = rng1.Next(safeStart, allTracks.Count + 1);
+
+                            allTracks.Insert(insertIndex, t);
+                        }
+
+
+                        // ❗ OPEN THE TRACK REVIEW WINDOW IMMEDIATELY AFTER FIRST ARTIST
+                        if (!reviewWindowOpened && allTracks.Count > 0)
+                        {
+                            reviewWindowOpened = true;
+
+                            // Open TrackReviewWindow with streaming collection
+                            reviewWindow = new TrackReviewWindow(allTracks);
+                            reviewWindow.Owner = this;
+                            reviewWindow.Show();
+
+                            StatusTextBlock.Text = "Starting track review… loading more in background.";
+                        }
+
+                        // Continue processing remaining artists WITHOUT blocking UI
+                        await Task.Delay(50);
                     }
-
-                    // SHUFFLE this artist's tracks to reduce clustering
-                    var rng = new Random();
-                    topTracks = topTracks.OrderBy(_ => rng.Next()).ToList();
-
-                    // ADD THEM TO THE MASTER STREAM
-                    var rng1 = new Random();
-
-                    foreach (var t in topTracks)
+                    catch (Exception ex)
                     {
-                        int insertIndex = rng1.Next(0, allTracks.Count + 1);
-                        allTracks.Insert(insertIndex, t);
+
                     }
-
-
-                    // ❗ OPEN THE TRACK REVIEW WINDOW IMMEDIATELY AFTER FIRST ARTIST
-                    if (!reviewWindowOpened && allTracks.Count > 0)
-                    {
-                        reviewWindowOpened = true;
-
-                        // Open TrackReviewWindow with streaming collection
-                        reviewWindow = new TrackReviewWindow(allTracks);
-                        reviewWindow.Owner = this;
-                        reviewWindow.Show();
-
-                        StatusTextBlock.Text = "Starting track review… loading more in background.";
-                    }
-
-                    // Continue processing remaining artists WITHOUT blocking UI
-                    await Task.Delay(50);
                 }
+
+                Console.WriteLine();
+                Console.WriteLine("Selected Genres: ");
+                foreach (var artist in similarArtists)
+                {
+                    Console.WriteLine($"{artist.ToString()}");
+                }
+
+                Console.WriteLine();
+                Console.WriteLine($"Total Track Count : {totalTrackCount}");
+
+
 
                 // After loop ends
                 if (!reviewWindowOpened)

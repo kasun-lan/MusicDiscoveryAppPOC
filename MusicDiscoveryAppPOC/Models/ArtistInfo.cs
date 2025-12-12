@@ -9,8 +9,26 @@ public class ArtistInfo
     public string? DeezerId { get; set; }
     public string? ImageUrl { get; set; }
     public string? Source { get; set; }
+    public int TopTrackCount { get; set; }
 
     public Dictionary<string, string?> Metadata { get; } = new();
+
+    public override string ToString()
+    {
+        var core =
+            $"{Name} , Tracks Count: {TopTrackCount}, Spotify Id: {SpotifyId}, Deezer Id : {DeezerId}";
+
+        if (Metadata.Count == 0)
+            return core;
+
+        var metadataString = string.Join(
+            ", ",
+            Metadata.Select(kv => $"{kv.Key}: {kv.Value ?? "null"}")
+        );
+
+        return $"{core} | Metadata [{metadataString}]";
+
+    }
 }
 
 

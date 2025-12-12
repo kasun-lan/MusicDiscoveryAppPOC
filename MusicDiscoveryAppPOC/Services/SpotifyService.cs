@@ -83,6 +83,123 @@ public class SpotifyService : IDisposable
         return tracks;
     }
 
+    public async Task<List<TrackInfo>> GetArtistTracksAsync(
+    string artistId,
+    int limit = 10,
+    string market = "US",
+    CancellationToken cancellationToken = default)
+    {
+        await EnsureAccessTokenAsync(cancellationToken).ConfigureAwait(false);
+
+        var tracks = new List<TrackInfo>();
+
+        // 1. Get artist albums (albums + singles)
+        using var albumsRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"{ApiBaseUrl}/artists/{artistId}/albums?include_groups=album,single,appears_on&limit=50");
+;
+
+
+        albumsRequest.Headers.Authorization =
+            new AuthenticationHeaderValue("Bearer", _accessToken);
+
+        using var albumsResponse =
+            await _httpClient.SendAsync(albumsRequest, cancellationToken).ConfigureAwait(false);
+
+        albumsResponse.EnsureSuccessStatusCode();
+
+        using var albumsStream =
+            await albumsResponse.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+
+        using var albumsJson =
+            await JsonDocument.ParseAsync(albumsStream, cancellationToken: cancellationToken)
+                              .ConfigureAwait(false);
+
+        foreach (var album in albumsJson.RootElement.GetProperty("items").EnumerateArray())
+        {
+            if (tracks.Count >= limit)
+                break;
+
+            var albumId = album.GetProperty("id").GetString();
+            if (string.IsNullOrWhiteSpace(albumId))
+                continue;
+
+            // 2. Get tracks for each album
+            using var tracksRequest = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"{ApiBaseUrl}/albums/{albumId}/tracks?limit=50");
+
+            tracksRequest.Headers.Authorization =
+                new AuthenticationHeaderValue("Bearer", _accessToken);
+
+            using var tracksResponse =
+                await _httpClient.SendAsync(tracksRequest, cancellationToken).ConfigureAwait(false);
+
+            tracksResponse.EnsureSuccessStatusCode();
+
+            using var tracksStream =
+                await tracksResponse.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+
+            using var tracksJson =
+                await JsonDocument.ParseAsync(tracksStream, cancellationToken: cancellationToken)
+                                  .ConfigureAwait(false);
+
+            foreach (var trackItem in tracksJson.RootElement.GetProperty("items").EnumerateArray())
+            {
+                tracks.Add(ParseTrack(trackItem));
+
+                if (tracks.Count >= limit)
+                    break;
+            }
+        }
+
+        return tracks;
+    }
+
+
+    public async Task<List<TrackInfo>> GetTracksByArtistNameAsync(
+    string artistName,
+    int limit = 10,
+    CancellationToken cancellationToken = default)
+    {
+        await EnsureAccessTokenAsync(cancellationToken).ConfigureAwait(false);
+
+        var query =
+            $"{ApiBaseUrl}/search" +
+            $"?q=artist:\"{Uri.EscapeDataString(artistName)}\"" +
+            $"&type=track" +
+            $"&limit={limit}";
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, query);
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue("Bearer", _accessToken);
+
+        using var response =
+            await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+        response.EnsureSuccessStatusCode();
+
+        using var stream =
+            await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+
+        using var json =
+            await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken)
+                              .ConfigureAwait(false);
+
+        var tracks = new List<TrackInfo>();
+
+        foreach (var item in json.RootElement
+                                 .GetProperty("tracks")
+                                 .GetProperty("items")
+                                 .EnumerateArray())
+        {
+            tracks.Add(ParseTrack(item));
+        }
+
+        return tracks;
+    }
+
+
     private ArtistInfo ParseArtist(JsonElement item)
     {
         var artist = new ArtistInfo
@@ -162,6 +279,26 @@ public class SpotifyService : IDisposable
         var expiresIn = json.RootElement.TryGetProperty("expires_in", out var expires) ? expires.GetInt32() : 3600;
         _tokenExpiryUtc = DateTimeOffset.UtcNow.AddSeconds(expiresIn - 60);
     }
+
+    public async Task<ArtistInfo?> GetArtistByIdAsync(string id, CancellationToken cancellationToken = default)
+    {
+        await EnsureAccessTokenAsync(cancellationToken).ConfigureAwait(false);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"{ApiBaseUrl}/artists/{id}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+            return null;
+
+        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        using var json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        return ParseArtist(json.RootElement);
+    }
+
+
 
     public void Dispose()
     {

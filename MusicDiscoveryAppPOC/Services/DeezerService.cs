@@ -95,6 +95,87 @@ public class DeezerService : IDisposable
         return artist;
     }
 
+
+    public async Task<List<TrackInfo>> GetDeezerArtistTracksAsync(
+    string artistId,
+    int limit = 100,
+    CancellationToken cancellationToken = default)
+    {
+        using var httpClient = new HttpClient();
+
+        var url = $"https://api.deezer.com/artist/{artistId}/top?limit={limit}";
+
+        using var response = await httpClient
+            .GetAsync(url, cancellationToken)
+            .ConfigureAwait(false);
+
+        response.EnsureSuccessStatusCode();
+
+        using var stream = await response.Content
+            .ReadAsStreamAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        using var json = await JsonDocument
+            .ParseAsync(stream, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        var tracks = new List<TrackInfo>();
+
+        foreach (var item in json.RootElement
+                                 .GetProperty("data")
+                                 .EnumerateArray())
+        {
+            tracks.Add(ParseDeezerTrack(item));
+        }
+
+        return tracks;
+    }
+
+
+
+    private TrackInfo ParseDeezerTrack(JsonElement item)
+    {
+        var track = new TrackInfo
+        {
+            Id = item.GetProperty("id").GetInt64().ToString(),
+            Name = item.GetProperty("title").GetString() ?? string.Empty,
+            ArtistName = item.GetProperty("artist")
+                             .GetProperty("name")
+                             .GetString() ?? string.Empty,
+            AlbumName = item.GetProperty("album")
+                            .GetProperty("title")
+                            .GetString() ?? string.Empty,
+            PreviewUrl = item.TryGetProperty("preview", out var preview)
+                ? preview.GetString()
+                : null,
+            ExternalUrl = item.TryGetProperty("link", out var link)
+                ? link.GetString()
+                : null,
+
+            // Deezer does not expose a Spotify-style popularity metric
+            Popularity = 0
+        };
+
+        // Image (prefer album cover)
+        if (item.GetProperty("album").TryGetProperty("cover_medium", out var cover))
+        {
+            track.ImageUrl = cover.GetString();
+        }
+
+        // Optional metadata — keep Deezer-specific facts here
+        track.Metadata["source"] = "deezer";
+        track.Metadata["rank"] = item.TryGetProperty("rank", out var rank)
+            ? rank.GetInt32().ToString()
+            : null;
+        track.Metadata["explicit"] = item.TryGetProperty("explicit_lyrics", out var explicitLyrics)
+            ? explicitLyrics.GetBoolean().ToString()
+            : null;
+
+        return track;
+    }
+
+
+
     public async Task<string?> GetTrackPreviewUrlAsync(string trackName, string artistName, CancellationToken cancellationToken = default)
     {
         var query = $"{artistName} {trackName}";

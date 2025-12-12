@@ -25,6 +25,9 @@ public partial class TrackReviewWindow : Window
     private readonly List<TrackInfo> _selectedTracks = new();
     private int _currentPosition = 0; // position inside shuffle queue
 
+    public int CurrentReviewIndex => _currentPosition;
+
+
 
     public IReadOnlyList<TrackInfo> SelectedTracks => _selectedTracks;
 
@@ -62,15 +65,15 @@ public partial class TrackReviewWindow : Window
                         }
                     }
 
-                    // Insert new item into shuffle order at a random position
-                    int pos = rng.Next(_shuffleOrder.Count + 1);
+                    // Insert ONLY into the unread region: from _currentPosition+1 to end
+                    int safeStart = Math.Max(_currentPosition + 1, 0);
+                    int safeEnd = _shuffleOrder.Count + 1;
+
+                    int pos = rng.Next(safeStart, safeEnd);
                     _shuffleOrder.Insert(pos, newIndex);
 
-                    // If the insert happens before or at the current track position, shift the cursor
-                    if (pos <= _currentPosition)
-                    {
-                        _currentPosition++;
-                    }
+                    // No need to shift _currentPosition, because we never insert before it anymore
+
                 }
 
                 // Refresh UI so bindings stay consistent with the shuffled indices
@@ -172,6 +175,7 @@ public partial class TrackReviewWindow : Window
 
     private void OnKeepClicked(object sender, RoutedEventArgs e)
     {
+        
         StopPreview();
 
         var current = GetCurrentTrackOrNull();
