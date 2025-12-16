@@ -54,7 +54,7 @@ public class DeezerService : IDisposable
 
     private async Task<List<ArtistInfo>> GetSimilarArtistsByIdAsync(string deezerArtistId, CancellationToken cancellationToken)
     {
-        using var response = await _httpClient.GetAsync($"{ApiBaseUrl}/artist/{deezerArtistId}/related", cancellationToken).ConfigureAwait(false);
+        using var response = await _httpClient.GetAsync($"{ApiBaseUrl}/artist/{deezerArtistId}/related?limit=7", cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             return new List<ArtistInfo>();
