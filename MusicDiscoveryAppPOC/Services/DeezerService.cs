@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Reflection;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -54,7 +55,7 @@ public class DeezerService : IDisposable
 
     private async Task<List<ArtistInfo>> GetSimilarArtistsByIdAsync(string deezerArtistId, CancellationToken cancellationToken)
     {
-        using var response = await _httpClient.GetAsync($"{ApiBaseUrl}/artist/{deezerArtistId}/related", cancellationToken).ConfigureAwait(false);
+        using var response = await _httpClient.GetAsync($"{ApiBaseUrl}/artist/{deezerArtistId}/related?limit=50&index=0", cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             return new List<ArtistInfo>();

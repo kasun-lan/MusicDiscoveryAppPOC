@@ -22,7 +22,9 @@ namespace MusicDiscoveryAppPOC
         private DeezerService? _deezerService;
         private MusicBrainzService? _musicBrainzService;
 
+
         private bool _isConfigured;
+        private HashSet<string> _selectedGenres;
 
         public MainWindow()
         {
@@ -261,7 +263,6 @@ namespace MusicDiscoveryAppPOC
 
        
 
-        List<ArtistInfo> _level1SuggestedArtists = new List<ArtistInfo>();
 
         private async void OnFindSuggestionsClicked(object sender, RoutedEventArgs e)
         {
@@ -282,10 +283,14 @@ namespace MusicDiscoveryAppPOC
             {
                 SetBusyState(true, "Finding similar artists via Deezer...");
                 var similarArtists = new List<ArtistInfo>();
+                _selectedGenres = GetSelectedGenres();
+
+
+                var aggregator = new SimilarArtistAggregationService(_deezerService);
 
                 foreach (var artist in _selectedArtists)
                 {
-                    var related = await _deezerService.GetArtistsWithAtLeastThreeTracksAsync(artist.Name, 7);
+                    var related = await aggregator.GetSimilarArtistsWithAtLeastOneTrackAsync(artist.Name, 10);
                     foreach (var candidate in related)
                     {
                         if (similarArtists.All(a => !string.Equals(a.Name, candidate.Name, StringComparison.OrdinalIgnoreCase)))
@@ -295,13 +300,13 @@ namespace MusicDiscoveryAppPOC
                     }
                 }
 
-                #region debug
+                #region non critical
                 Console.WriteLine("Deezer similarArtists");
                 foreach (var artist in similarArtists)
                 {
                     Console.WriteLine($"{artist.ToString()}");
                 }
-                #endregion
+                
 
                 if (similarArtists.Count == 0)
                 {
@@ -312,12 +317,14 @@ namespace MusicDiscoveryAppPOC
 
                 StatusTextBlock.Text = $"Found {similarArtists.Count} similar artist(s). Fetching top tracks from Spotify...";
 
-                var suggestionTracks = new List<TrackInfo>();
 
-                var selectedGenres = GetSelectedGenres();
+                #endregion
 
-                #region debug
-                string strSelectedGenres = string.Join(",", selectedGenres);
+
+
+
+                #region non critical
+                string strSelectedGenres = string.Join(",", _selectedGenres);
                 Console.WriteLine();
                 Console.WriteLine("Selected Genres: ");
                 Console.WriteLine(strSelectedGenres);
@@ -338,7 +345,7 @@ namespace MusicDiscoveryAppPOC
 
                     try
                     {
-                        if (await ArtistValdation(selectedGenres, similarArtist) == false)
+                        if (await ArtistValdation(_selectedGenres, similarArtist) == false)
                             continue;
 
                         artistIndex++;
@@ -480,7 +487,14 @@ namespace MusicDiscoveryAppPOC
 
             if (mbGenres.Count > 0)
                 similarArtist.Metadata["genres"] = string.Join(", ", mbGenres);
-            //}
+            else
+            {
+                //TODO : this is not logical but ok for now.
+                return true; 
+
+            }
+
+            
 
 
             // GENRE FILTERING
