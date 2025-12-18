@@ -13,6 +13,8 @@ public class ArtistInfo
 
     public Dictionary<string, string?> Metadata { get; } = new();
 
+    public List<TrackInfo> Tracks { get; set; } = new List<TrackInfo>();
+
     public override string ToString()
     {
         var core =

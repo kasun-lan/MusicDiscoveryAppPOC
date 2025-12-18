@@ -54,7 +54,7 @@ public class DeezerService : IDisposable
 
     private async Task<List<ArtistInfo>> GetSimilarArtistsByIdAsync(string deezerArtistId, CancellationToken cancellationToken)
     {
-        using var response = await _httpClient.GetAsync($"{ApiBaseUrl}/artist/{deezerArtistId}/related?limit=7", cancellationToken).ConfigureAwait(false);
+        using var response = await _httpClient.GetAsync($"{ApiBaseUrl}/artist/{deezerArtistId}/related", cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             return new List<ArtistInfo>();
@@ -98,7 +98,7 @@ public class DeezerService : IDisposable
 
     public async Task<List<TrackInfo>> GetDeezerArtistTracksAsync(
     string artistId,
-    int limit = 100,
+    int limit = 3,
     CancellationToken cancellationToken = default)
     {
         using var httpClient = new HttpClient();
@@ -206,6 +206,43 @@ public class DeezerService : IDisposable
 
         return null;
     }
+
+
+    public async Task<List<ArtistInfo>> GetArtistsWithAtLeastThreeTracksAsync(string artistName, int requiredCount, CancellationToken cancellationToken = default)
+    {
+        var result = new List<ArtistInfo>();
+
+        // Fetch initial batch of similar artists
+        var similarArtists = await GetSimilarArtistsByNameAsync(artistName, cancellationToken);
+
+        // Go through each artist and check their track count
+        foreach (var artist in similarArtists)
+        {
+            // Fetch the top tracks for the artist
+            var tracks = await GetDeezerArtistTracksAsync(artist.DeezerId!, cancellationToken: cancellationToken);
+
+            // Only add the artist if they have at least 3 tracks
+            if (tracks.Count >= 3)
+            {
+                artist.TopTrackCount = tracks.Count;
+                // Optionally, you can attach these tracks to the artist somehow, or just keep the track info handy
+                artist.Metadata["track_count"] = tracks.Count.ToString();
+                artist.Tracks.AddRange(tracks);
+
+                result.Add(artist);
+            }
+
+            // Stop when we've gathered enough artists
+            if (result.Count >= requiredCount)
+            {
+                break;
+            }
+        }
+
+        return result;
+    }
+
+
 
     public void Dispose()
     {
