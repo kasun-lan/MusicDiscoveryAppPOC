@@ -203,9 +203,9 @@ namespace MusicDiscoveryAppPOC
 
                 if (reviewWindow == null && allTracks.Count > 0)
                 {
-                    reviewWindow = new TrackReviewWindow(allTracks);
-                    reviewWindow.Owner = this;
-                    reviewWindow.Show();
+                    //reviewWindow = new TrackReviewWindow(allTracks);
+                    //reviewWindow.Owner = this;
+                    //reviewWindow.Show();
                 }
             }
         }

@@ -28,7 +28,7 @@
                     Click="OnSearchClicked" />
             <Button Content="Clear"
                     Width="100"
-                    Click="OnClearClicked" />
+                    />
         </StackPanel>
 
         <Grid Grid.Row="1" Margin="0,16,0,16">
@@ -42,7 +42,7 @@
                 <Grid>
                     <ListView x:Name="SearchResultsList"
                               SelectionMode="Extended"
-                              MouseDoubleClick="OnSearchResultDoubleClicked">
+                            >
                         <ListView.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Orientation="Horizontal" >
@@ -76,7 +76,7 @@
                         Click="OnAddArtistClicked" />
                 <Button Content="← Remove"
                         Width="120"
-                        Click="OnRemoveArtistClicked" />
+                        />
             </StackPanel>
 
             <GroupBox Grid.Column="2" Header="Selected Artists">
