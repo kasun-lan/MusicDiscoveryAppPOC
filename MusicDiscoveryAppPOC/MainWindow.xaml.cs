@@ -302,15 +302,15 @@ namespace MusicDiscoveryAppPOC
                             _backupTracks.Add(backup);
 
                         // Open review window as soon as we have enough
-                        //if (!reviewWindowOpened && allTracks.Count > 10)
-                        //{
-                        //    reviewWindowOpened = true;
-                        //    reviewWindow = new TrackReviewWindow(allTracks)
-                        //    {
-                        //        Owner = this
-                        //    };
-                        //    reviewWindow.Show();
-                        //}
+                        if (!reviewWindowOpened && allTracks.Count > 10)
+                        {
+                            reviewWindowOpened = true;
+                            reviewWindow = new TrackReviewWindow(allTracks)
+                            {
+                                Owner = this
+                            };
+                            reviewWindow.Show();
+                        }
 
                         await Task.Delay(50);
                     }
@@ -386,15 +386,14 @@ namespace MusicDiscoveryAppPOC
             }
 
             // --- MusicBrainz ---
-            //if (_musicBrainzService != null)
-            //{
-            //    await Task.Delay(1000); // rate-limit protection
-            //    var mbGenres = await _musicBrainzService.GetGenresAsync(artist.Name);
+            if (_musicBrainzService != null)
+            {
+                var mbGenres = await _musicBrainzService.GetGenresAsync(artist.Name);
 
-            //    foreach (var g in mbGenres)
-            //        if (!string.IsNullOrWhiteSpace(g))
-            //            genreSet.Add(g.Trim());
-            //}
+                foreach (var g in mbGenres)
+                    if (!string.IsNullOrWhiteSpace(g))
+                        genreSet.Add(g.Trim());
+            }
 
             if (genreSet.Count > 0)
             {
