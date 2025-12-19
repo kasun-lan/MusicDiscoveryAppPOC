@@ -227,6 +227,8 @@ namespace MusicDiscoveryAppPOC
         }
 
         // 🔹 ORIGINAL handler – RESTORED AND PRESERVED
+
+
         private async void OnFindSuggestionsClicked(object sender, RoutedEventArgs e)
         {
             if (!_isConfigured || _spotifyService is null || _deezerService is null)
@@ -240,80 +242,78 @@ namespace MusicDiscoveryAppPOC
                 SetBusyState(true, "Finding similar artists via Deezer...");
                 _selectedGenres = GetSelectedGenres();
 
-                var similarArtists = new List<ArtistInfo>();
                 var aggregator = new SimilarArtistAggregationService(_deezerService);
 
-                foreach (var artist in _selectedArtists)
-                {
-                    var related = await aggregator.GetSimilarArtistsWithAtLeastOneTrackAsync(artist.Name, 20);
-                    foreach (var candidate in related)
-                    {
-                        if (similarArtists.All(a =>
-                            !string.Equals(a.Name, candidate.Name, StringComparison.OrdinalIgnoreCase)))
-                        {
-                            similarArtists.Add(candidate);
-                        }
-                    }
-                }
-
+                var seenArtists = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var allTracks = new ObservableCollection<TrackInfo>();
                 TrackReviewWindow? reviewWindow = null;
                 bool reviewWindowOpened = false;
 
-                foreach (var similarArtist in similarArtists)
+                foreach (var seedArtist in _selectedArtists)
                 {
+                    var relatedArtists =
+                        await aggregator.GetSimilarArtistsWithAtLeastOneTrackAsync(seedArtist.Name, 30);
 
-                    await EnrichArtistIdentitiesAsync(similarArtist);
-
-                    if (!await ArtistValdation(_selectedGenres, similarArtist))
-                        continue;
-
-                    similarArtist.TopTrackCount = similarArtist.Tracks.Count;
-
-                    // Ensure previews exist
-                    foreach (var track in similarArtist.Tracks)
+                    foreach (var candidate in relatedArtists)
                     {
-                        if (string.IsNullOrWhiteSpace(track.PreviewUrl))
+                        // Deduplicate early
+                        if (!seenArtists.Add(candidate.Name))
+                            continue;
+
+                        await EnrichArtistIdentitiesAsync(candidate);
+
+                        if (!await ArtistValdation(_selectedGenres, candidate))
+                            continue;
+
+                        candidate.TopTrackCount = candidate.Tracks.Count;
+
+                        // Ensure previews
+                        foreach (var track in candidate.Tracks)
                         {
-                            try
+                            if (string.IsNullOrWhiteSpace(track.PreviewUrl))
                             {
-                                var preview = await _deezerService.GetTrackPreviewUrlAsync(track.Name, track.ArtistName);
-                                if (!string.IsNullOrWhiteSpace(preview))
-                                    track.PreviewUrl = preview;
+                                try
+                                {
+                                    var preview =
+                                        await _deezerService.GetTrackPreviewUrlAsync(
+                                            track.Name,
+                                            track.ArtistName);
+
+                                    if (!string.IsNullOrWhiteSpace(preview))
+                                        track.PreviewUrl = preview;
+                                }
+                                catch { }
                             }
-                            catch { }
                         }
+
+                        // Shuffle artist tracks
+                        var rng = new Random();
+                        var shuffled = candidate.Tracks
+                            .OrderBy(_ => rng.Next())
+                            .ToList();
+
+                        // One primary track goes to review queue
+                        var primary = shuffled.FirstOrDefault();
+                        if (primary != null)
+                            allTracks.Add(primary);
+
+                        // Rest go to backup
+                        foreach (var backup in shuffled.Skip(1))
+                            _backupTracks.Add(backup);
+
+                        // Open review window as soon as we have enough
+                        //if (!reviewWindowOpened && allTracks.Count > 10)
+                        //{
+                        //    reviewWindowOpened = true;
+                        //    reviewWindow = new TrackReviewWindow(allTracks)
+                        //    {
+                        //        Owner = this
+                        //    };
+                        //    reviewWindow.Show();
+                        //}
+
+                        await Task.Delay(50);
                     }
-
-                    // Randomize artist’s own tracks
-                    var rng = new Random();
-                    var shuffled = similarArtist.Tracks
-                        .OrderBy(_ => rng.Next())
-                        .ToList();
-
-                    // Take ONE primary track
-                    var primary = shuffled.FirstOrDefault();
-                    if (primary != null)
-                    {
-                        allTracks.Add(primary);
-                    }
-
-                    // Remaining tracks go to backup pool
-                    foreach (var backup in shuffled.Skip(1))
-                    {
-                        _backupTracks.Add(backup);
-                    }
-
-
-                    if (!reviewWindowOpened && allTracks.Count > 10)
-                    {
-                        reviewWindowOpened = true;
-                        reviewWindow = new TrackReviewWindow(allTracks);
-                        reviewWindow.Owner = this;
-                        reviewWindow.Show();
-                    }
-
-                    await Task.Delay(50);
                 }
             }
             finally
@@ -321,6 +321,7 @@ namespace MusicDiscoveryAppPOC
                 SetBusyState(false);
             }
         }
+
 
         private async Task<bool> ArtistValdation(HashSet<string> selectedGenres, ArtistInfo similarArtist)
         {
@@ -385,15 +386,15 @@ namespace MusicDiscoveryAppPOC
             }
 
             // --- MusicBrainz ---
-            if (_musicBrainzService != null)
-            {
-                await Task.Delay(1000); // rate-limit protection
-                var mbGenres = await _musicBrainzService.GetGenresAsync(artist.Name);
+            //if (_musicBrainzService != null)
+            //{
+            //    await Task.Delay(1000); // rate-limit protection
+            //    var mbGenres = await _musicBrainzService.GetGenresAsync(artist.Name);
 
-                foreach (var g in mbGenres)
-                    if (!string.IsNullOrWhiteSpace(g))
-                        genreSet.Add(g.Trim());
-            }
+            //    foreach (var g in mbGenres)
+            //        if (!string.IsNullOrWhiteSpace(g))
+            //            genreSet.Add(g.Trim());
+            //}
 
             if (genreSet.Count > 0)
             {
