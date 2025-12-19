@@ -21,6 +21,8 @@ namespace MusicDiscoveryAppPOC
         private SpotifyService? _spotifyService;
         private DeezerService? _deezerService;
         private MusicBrainzService? _musicBrainzService;
+        private readonly List<TrackInfo> _backupTracks = new();
+
 
         private bool _isConfigured;
         private HashSet<string> _selectedGenres = new(StringComparer.OrdinalIgnoreCase);
@@ -268,6 +270,7 @@ namespace MusicDiscoveryAppPOC
 
                     similarArtist.TopTrackCount = similarArtist.Tracks.Count;
 
+                    // Ensure previews exist
                     foreach (var track in similarArtist.Tracks)
                     {
                         if (string.IsNullOrWhiteSpace(track.PreviewUrl))
@@ -282,13 +285,27 @@ namespace MusicDiscoveryAppPOC
                         }
                     }
 
+                    // Randomize artist’s own tracks
                     var rng = new Random();
-                    similarArtist.Tracks = similarArtist.Tracks.OrderBy(_ => rng.Next()).ToList();
+                    var shuffled = similarArtist.Tracks
+                        .OrderBy(_ => rng.Next())
+                        .ToList();
 
-                    foreach (var t in similarArtist.Tracks)
-                        allTracks.Add(t);
+                    // Take ONE primary track
+                    var primary = shuffled.FirstOrDefault();
+                    if (primary != null)
+                    {
+                        allTracks.Add(primary);
+                    }
 
-                    if (!reviewWindowOpened && allTracks.Count > 0)
+                    // Remaining tracks go to backup pool
+                    foreach (var backup in shuffled.Skip(1))
+                    {
+                        _backupTracks.Add(backup);
+                    }
+
+
+                    if (!reviewWindowOpened && allTracks.Count > 10)
                     {
                         reviewWindowOpened = true;
                         reviewWindow = new TrackReviewWindow(allTracks);
