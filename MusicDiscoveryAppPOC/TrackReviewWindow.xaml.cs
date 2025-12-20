@@ -9,6 +9,7 @@ using System.Windows.Navigation;
 using System.Linq;
 using MusicDiscoveryAppPOC.Models;
 using System.Collections.ObjectModel;
+using System.Threading.Tasks;
 
 namespace MusicDiscoveryAppPOC;
 
@@ -20,16 +21,15 @@ public partial class TrackReviewWindow : Window
     private readonly List<int> _shuffleOrder = new();  // list of track indices in the order they should appear
     private bool _isPlaying;
 
-
-
     private readonly List<TrackInfo> _selectedTracks = new();
     private int _currentPosition = 0; // position inside shuffle queue
 
     public int CurrentReviewIndex => _currentPosition;
 
-
-
     public IReadOnlyList<TrackInfo> SelectedTracks => _selectedTracks;
+
+    // 🔵 ADDED: event to notify MainWindow when a track is liked
+    public event Func<TrackInfo, Task>? TrackLiked;
 
     public TrackReviewWindow(ObservableCollection<TrackInfo> tracks)
     {
@@ -71,9 +71,6 @@ public partial class TrackReviewWindow : Window
 
                     int pos = rng.Next(safeStart, safeEnd);
                     _shuffleOrder.Insert(pos, newIndex);
-
-                    // No need to shift _currentPosition, because we never insert before it anymore
-
                 }
 
                 // Refresh UI so bindings stay consistent with the shuffled indices
@@ -84,7 +81,6 @@ public partial class TrackReviewWindow : Window
         UpdateView();
     }
 
-
     private void ShuffleList(List<int> list)
     {
         var rng = new Random();
@@ -94,7 +90,6 @@ public partial class TrackReviewWindow : Window
             (list[i], list[j]) = (list[j], list[i]);
         }
     }
-
 
     private void UpdateView()
     {
@@ -173,9 +168,8 @@ public partial class TrackReviewWindow : Window
         }
     }
 
-    private void OnKeepClicked(object sender, RoutedEventArgs e)
+    private async void OnKeepClicked(object sender, RoutedEventArgs e)
     {
-        
         StopPreview();
 
         var current = GetCurrentTrackOrNull();
@@ -184,6 +178,10 @@ public partial class TrackReviewWindow : Window
             // Avoid duplicates in selected list by track Id
             if (!_selectedTracks.Any(t => string.Equals(t.Id, current.Id, StringComparison.OrdinalIgnoreCase)))
                 _selectedTracks.Add(current);
+
+            // 🔵 ADDED: notify MainWindow to expand discovery
+            if (TrackLiked != null)
+                await TrackLiked.Invoke(current);
         }
 
         Advance();
@@ -205,7 +203,6 @@ public partial class TrackReviewWindow : Window
         }
 
         UpdateView();
-
     }
 
     private void CompleteSelection()
@@ -223,12 +220,15 @@ public partial class TrackReviewWindow : Window
 
     private void OnCreatePlaylistClicked(object sender, RoutedEventArgs e)
     {
-        // Only rely on tracks the user explicitly kept
         var playlistCandidates = new List<TrackInfo>(_selectedTracks);
 
         if (playlistCandidates.Count == 0)
         {
-            MessageBox.Show("There are no tracks available to add to a playlist yet. Keep at least one track first.", "No Tracks Selected", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(
+                "There are no tracks available to add to a playlist yet. Keep at least one track first.",
+                "No Tracks Selected",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
             return;
         }
 
@@ -236,7 +236,6 @@ public partial class TrackReviewWindow : Window
         playlistWindow.Owner = this;
         playlistWindow.Show();
     }
-
 
     private TrackInfo? GetCurrentTrackOrNull()
     {
@@ -248,7 +247,6 @@ public partial class TrackReviewWindow : Window
 
         return _tracks[trackIndex];
     }
-
 
     private void OnHyperlinkNavigate(object sender, RequestNavigateEventArgs e)
     {
@@ -268,24 +266,16 @@ public partial class TrackReviewWindow : Window
         if (_shuffleOrder.Count == 0)
             return;
 
-        int trackIndex = _shuffleOrder[_currentPosition];
         var track = GetCurrentTrackOrNull();
         if (track == null) return;
 
-
         if (string.IsNullOrWhiteSpace(track.PreviewUrl))
-        {
             return;
-        }
 
         if (_isPlaying)
-        {
             PausePreview();
-        }
         else
-        {
             PlayPreview(track.PreviewUrl);
-        }
     }
 
     private void PlayPreview(string previewUrl)
@@ -318,10 +308,7 @@ public partial class TrackReviewWindow : Window
             PreviewStatusTextBlock.Text = "Paused";
             PreviewStatusTextBlock.Foreground = Brushes.Orange;
         }
-        catch
-        {
-            // Ignore errors when pausing
-        }
+        catch { }
     }
 
     private void StopPreview()
@@ -332,10 +319,7 @@ public partial class TrackReviewWindow : Window
             PreviewMediaElement.Source = null;
             _isPlaying = false;
         }
-        catch
-        {
-            // Ignore errors when stopping
-        }
+        catch { }
     }
 
     private void OnPreviewEnded(object sender, RoutedEventArgs e)
@@ -366,4 +350,3 @@ public partial class TrackReviewWindow : Window
         }
     }
 }
-

@@ -38,7 +38,11 @@ namespace MusicDiscoveryAppPOC.Services
 
             // 🔴 REQUIRED by MusicBrainz
             _client.DefaultRequestHeaders.UserAgent.ParseAdd(
-                "MusicDiscoveryAppPOC/1.0 (contact: you@example.com)");
+                "MusicDiscoveryAppPOC/1.0 (contact: nadeeshancooray@gmail.com)");
+
+            _client.DefaultRequestVersion = HttpVersion.Version11;
+            _client.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionExact;
+
 
             _client.Timeout = TimeSpan.FromSeconds(30);
         }
@@ -51,26 +55,34 @@ namespace MusicDiscoveryAppPOC.Services
             await _rateLock.WaitAsync();
             try
             {
-                var now = DateTime.UtcNow;
-                var elapsed = now - _lastRequestUtc;
-
+                var elapsed = DateTime.UtcNow - _lastRequestUtc;
                 if (elapsed < MinInterval)
                     await Task.Delay(MinInterval - elapsed);
 
                 _lastRequestUtc = DateTime.UtcNow;
 
-                using var response = await _client.GetAsync(
-                    url,
-                    HttpCompletionOption.ResponseHeadersRead);
+                for (int attempt = 1; attempt <= 2; attempt++)
+                {
+                    try
+                    {
+                        using var response = await _client.GetAsync(url);
+                        response.EnsureSuccessStatusCode();
+                        return await response.Content.ReadAsStringAsync();
+                    }
+                    catch (HttpRequestException) when (attempt == 1)
+                    {
+                        await Task.Delay(500); // short backoff
+                    }
+                }
 
-                response.EnsureSuccessStatusCode();
-                return await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException("MusicBrainz request failed after retry.");
             }
             finally
             {
                 _rateLock.Release();
             }
         }
+
 
         // ============================
         // Public API

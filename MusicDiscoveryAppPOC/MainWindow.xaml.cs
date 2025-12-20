@@ -23,6 +23,8 @@ namespace MusicDiscoveryAppPOC
         private MusicBrainzService? _musicBrainzService;
         private readonly List<TrackInfo> _backupTracks = new();
 
+        // 🔵 ADDED: keep reference to live review track list
+        private ObservableCollection<TrackInfo>? _reviewTracks;
 
         private bool _isConfigured;
         private HashSet<string> _selectedGenres = new(StringComparer.OrdinalIgnoreCase);
@@ -227,8 +229,6 @@ namespace MusicDiscoveryAppPOC
         }
 
         // 🔹 ORIGINAL handler – RESTORED AND PRESERVED
-
-
         private async void OnFindSuggestionsClicked(object sender, RoutedEventArgs e)
         {
             if (!_isConfigured || _spotifyService is null || _deezerService is null)
@@ -246,6 +246,10 @@ namespace MusicDiscoveryAppPOC
 
                 var seenArtists = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var allTracks = new ObservableCollection<TrackInfo>();
+
+                // 🔵 ADDED: store reference so we can append later
+                _reviewTracks = allTracks;
+
                 TrackReviewWindow? reviewWindow = null;
                 bool reviewWindowOpened = false;
 
@@ -309,6 +313,10 @@ namespace MusicDiscoveryAppPOC
                             {
                                 Owner = this
                             };
+
+                            // 🔵 ADDED: subscribe to like-driven expansion
+                            reviewWindow.TrackLiked += OnTrackLikedAsync;
+
                             reviewWindow.Show();
                         }
 
@@ -321,7 +329,6 @@ namespace MusicDiscoveryAppPOC
                 SetBusyState(false);
             }
         }
-
 
         private async Task<bool> ArtistValdation(HashSet<string> selectedGenres, ArtistInfo similarArtist)
         {
@@ -358,9 +365,6 @@ namespace MusicDiscoveryAppPOC
                 }
             }
         }
-
-
-
 
         private async Task<bool> PopulateGenresFromAllSourcesAsync(ArtistInfo artist)
         {
@@ -402,6 +406,50 @@ namespace MusicDiscoveryAppPOC
             }
 
             return false;
+        }
+
+        // 🔵 ADDED: expand discovery graph when a track is liked
+        private async Task OnTrackLikedAsync(TrackInfo likedTrack)
+        {
+            if (_deezerService == null || _reviewTracks == null)
+                return;
+
+            try
+            {
+                var aggregator = new SimilarArtistAggregationService(_deezerService);
+
+                var relatedArtists =
+                    await aggregator.GetSimilarArtistsWithAtLeastOneTrackAsync(
+                        likedTrack.ArtistName, 10);
+
+                foreach (var candidate in relatedArtists)
+                {
+                    await EnrichArtistIdentitiesAsync(candidate);
+
+                    if (!await ArtistValdation(_selectedGenres, candidate))
+                        continue;
+
+                    candidate.TopTrackCount = candidate.Tracks.Count;
+
+                    var rng = new Random();
+                    var shuffled = candidate.Tracks
+                        .OrderBy(_ => rng.Next())
+                        .ToList();
+
+                    var primary = shuffled.FirstOrDefault();
+                    if (primary != null)
+                        Dispatcher.Invoke(() => _reviewTracks.Add(primary));
+
+                    foreach (var backup in shuffled.Skip(1))
+                        _backupTracks.Add(backup);
+
+                    await Task.Delay(50);
+                }
+            }
+            catch
+            {
+                // intentionally ignored (consistent with existing pipeline)
+            }
         }
 
         private void SetBusyState(bool isBusy, string? message = null)
