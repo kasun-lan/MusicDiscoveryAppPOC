@@ -181,7 +181,10 @@ public partial class TrackReviewWindow : Window
 
             // 🔵 ADDED: notify MainWindow to expand discovery
             if (TrackLiked != null)
-                await TrackLiked.Invoke(current);
+            {
+                _ = TrackLiked.Invoke(current); // fire-and-forget
+            }
+
         }
 
         Advance();

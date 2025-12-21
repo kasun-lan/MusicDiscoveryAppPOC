@@ -438,7 +438,8 @@ namespace MusicDiscoveryAppPOC
 
                     var primary = shuffled.FirstOrDefault();
                     if (primary != null)
-                        Dispatcher.Invoke(() => _reviewTracks.Add(primary));
+                        Dispatcher.BeginInvoke(() => _reviewTracks.Add(primary));
+
 
                     foreach (var backup in shuffled.Skip(1))
                         _backupTracks.Add(backup);
