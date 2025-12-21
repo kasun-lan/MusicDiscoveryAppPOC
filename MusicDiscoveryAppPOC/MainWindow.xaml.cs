@@ -25,6 +25,8 @@ namespace MusicDiscoveryAppPOC
 
         // 🔵 ADDED: keep reference to live review track list
         private ObservableCollection<TrackInfo>? _reviewTracks;
+        HashSet<string> _seenArtists = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
 
         private bool _isConfigured;
         private HashSet<string> _selectedGenres = new(StringComparer.OrdinalIgnoreCase);
@@ -244,7 +246,7 @@ namespace MusicDiscoveryAppPOC
 
                 var aggregator = new SimilarArtistAggregationService(_deezerService);
 
-                var seenArtists = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+               
                 var allTracks = new ObservableCollection<TrackInfo>();
 
                 // 🔵 ADDED: store reference so we can append later
@@ -261,7 +263,7 @@ namespace MusicDiscoveryAppPOC
                     foreach (var candidate in relatedArtists)
                     {
                         // Deduplicate early
-                        if (!seenArtists.Add(candidate.Name))
+                        if (!_seenArtists.Add(candidate.Name))
                             continue;
 
                         await EnrichArtistIdentitiesAsync(candidate);
@@ -424,6 +426,11 @@ namespace MusicDiscoveryAppPOC
 
                 foreach (var candidate in relatedArtists)
                 {
+
+                    // Deduplicate early
+                    if (!_seenArtists.Add(candidate.Name))
+                        continue;
+
                     await EnrichArtistIdentitiesAsync(candidate);
 
                     if (!await ArtistValdation(_selectedGenres, candidate))
